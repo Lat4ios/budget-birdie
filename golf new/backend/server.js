@@ -1,22 +1,34 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// CORS - Allow your frontend
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
+
 app.use(express.json());
 
-// MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/golfstore')
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch(err => console.error('❌ MongoDB error:', err));
+// MongoDB Atlas Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://budgerbirdie:Jcthekid1.@budgetbirdie.ouuesqs.mongodb.net/golfstore?retryWrites=true&w=majority';
+
+mongoose.connect(MONGODB_URI)
+  .then(() => {
+    console.log('✅ Connected to MongoDB Atlas!');
+    console.log('Database:', mongoose.connection.name);
+  })
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+  });
 
 // ========== SCHEMAS ==========
 
-// Admin Schema
 const adminSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -29,7 +41,6 @@ const adminSchema = new mongoose.Schema({
   lastLogin: { type: Date }
 });
 
-// Product Schema
 const productSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String, required: true },
@@ -42,7 +53,6 @@ const productSchema = new mongoose.Schema({
   discount: { type: Number, default: 0 }
 }, { timestamps: true });
 
-// Order Schema
 const orderSchema = new mongoose.Schema({
   orderId: { type: String, required: true, unique: true },
   orderNumber: { type: Number, required: true },
@@ -73,13 +83,11 @@ const orderSchema = new mongoose.Schema({
   orderDate: { type: Date, default: Date.now }
 });
 
-// Counter Schema for order numbers
 const counterSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   seq: { type: Number, default: 0 }
 });
 
-// Admin Code Schema (expires in 5 minutes)
 const adminCodeSchema = new mongoose.Schema({
   code: { type: String, required: true },
   generatedBy: { type: String, required: true },
@@ -109,32 +117,96 @@ function generateCode() {
 }
 
 async function initProducts() {
-  const count = await Product.countDocuments();
-  if (count === 0) {
-    await Product.insertMany([
-      { name: 'Premium Golf Balls (12 Pack)', description: 'Tour-quality golf balls with exceptional distance and spin control.', price: 2299, imageUrl: 'https://images.unsplash.com/photo-1587174486073-ae5e5cff23aa?w=400', category: 'balls', stockQuantity: 50 },
-      { name: 'Performance Golf Polo', description: 'Moisture-wicking, UV-protection fabric keeps you comfortable all day.', price: 3499, imageUrl: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400', category: 'apparel', stockQuantity: 30 },
-      { name: 'Pro Golf Glove', description: 'Premium cabretta leather glove for superior feel and grip.', price: 1499, imageUrl: 'https://images.unsplash.com/photo-1535131749006-b7f58c99034b?w=400', category: 'accessories', stockQuantity: 100 }
-    ]);
-    console.log('✅ Added default products');
+  try {
+    const count = await Product.countDocuments();
+    if (count === 0) {
+      await Product.insertMany([
+        { name: 'Premium Golf Balls (12 Pack)', description: 'Tour-quality golf balls with exceptional distance and spin control.', price: 2299, imageUrl: 'https://images.unsplash.com/photo-1587174486073-ae5e5cff23aa?w=400', category: 'balls', stockQuantity: 50 },
+        { name: 'Performance Golf Polo', description: 'Moisture-wicking, UV-protection fabric keeps you comfortable all day.', price: 3499, imageUrl: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400', category: 'apparel', stockQuantity: 30 },
+        { name: 'Pro Golf Glove', description: 'Premium cabretta leather glove for superior feel and grip.', price: 1499, imageUrl: 'https://images.unsplash.com/photo-1535131749006-b7f58c99034b?w=400', category: 'accessories', stockQuantity: 100 }
+      ]);
+      console.log('✅ Added default products');
+    }
+  } catch (error) {
+    console.error('Error initializing products:', error);
   }
 }
 
-// ========== ADMIN AUTH ROUTES ==========
+// ========== ROUTES ==========
 
-// Check if any admin exists
-app.get('/api/admin/check', async (req, res) => {
-  const count = await Admin.countDocuments();
-  res.json({ hasAdmin: count > 0 });
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await Product.find().sort({ createdAt: -1 });
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
-// First time setup - creates superadmin
+app.post('/api/products', async (req, res) => {
+  try {
+    const product = new Product(req.body);
+    await product.save();
+    res.status(201).json(product);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.put('/api/products/:id', async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    await Product.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Product deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/admin/create', async (req, res) => {
+  try {
+    const { username, password, email, fullName } = req.body;
+    const existing = await Admin.findOne({ $or: [{ username }, { email }] });
+    if (existing) {
+      return res.status(400).json({ message: 'Username or email already exists' });
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    const admin = new Admin({ username, password: hashed, email, fullName, role: 'admin' });
+    await admin.save();
+    res.json({ message: 'Admin created successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const admin = await Admin.findOne({ username });
+    if (!admin) return res.status(401).json({ message: 'Invalid credentials' });
+    const valid = await bcrypt.compare(password, admin.password);
+    if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
+    admin.lastLogin = new Date();
+    await admin.save();
+    res.json({ message: 'Login successful', admin: { _id: admin._id, username: admin.username, email: admin.email, fullName: admin.fullName, role: admin.role } });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 app.post('/api/admin/setup', async (req, res) => {
   try {
     const { username, password, email, fullName } = req.body;
     const count = await Admin.countDocuments();
     if (count > 0) return res.status(400).json({ message: 'Admin already exists' });
-    
     const hashed = await bcrypt.hash(password, 10);
     const admin = new Admin({ username, password: hashed, email, fullName, role: 'superadmin' });
     await admin.save();
@@ -144,168 +216,11 @@ app.post('/api/admin/setup', async (req, res) => {
   }
 });
 
-// Login
-app.post('/api/admin/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const admin = await Admin.findOne({ username });
-    if (!admin) return res.status(401).json({ message: 'Invalid credentials' });
-    
-    const valid = await bcrypt.compare(password, admin.password);
-    if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
-    
-    admin.lastLogin = new Date();
-    await admin.save();
-    
-    res.json({ message: 'Login successful', admin: { _id: admin._id, username: admin.username, email: admin.email, fullName: admin.fullName, role: admin.role } });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Change password
-app.post('/api/admin/change-password', async (req, res) => {
-  try {
-    const { username, oldPassword, newPassword } = req.body;
-    const admin = await Admin.findOne({ username });
-    if (!admin) return res.status(404).json({ message: 'Admin not found' });
-    
-    const valid = await bcrypt.compare(oldPassword, admin.password);
-    if (!valid) return res.status(401).json({ message: 'Current password incorrect' });
-    
-    admin.password = await bcrypt.hash(newPassword, 10);
-    await admin.save();
-    res.json({ message: 'Password changed successfully' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Create new admin (for regular signup) - ADD THIS ROUTE
-app.post('/api/admin/create', async (req, res) => {
-  try {
-    const { username, password, email, fullName, createdBy } = req.body;
-    
-    // Check if admin already exists
-    const existing = await Admin.findOne({ $or: [{ username }, { email }] });
-    if (existing) {
-      return res.status(400).json({ message: 'Username or email already exists' });
-    }
-    
-    const hashed = await bcrypt.hash(password, 10);
-    const admin = new Admin({ 
-      username, 
-      password: hashed, 
-      email, 
-      fullName, 
-      role: 'admin',
-      createdBy: createdBy || 'system'
-    });
-    await admin.save();
-    
-    res.json({ message: 'Admin created successfully' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Generate code for new admin (superadmin only)
-app.post('/api/admin/generate-code', async (req, res) => {
-  try {
-    const { adminId } = req.body;
-    const admin = await Admin.findById(adminId);
-    if (!admin || admin.role !== 'superadmin') {
-      return res.status(403).json({ message: 'Only superadmin can generate codes' });
-    }
-    
-    // Delete old codes
-    await AdminCode.deleteMany({ generatedBy: admin.username });
-    
-    const newCode = generateCode();
-    const adminCode = new AdminCode({ code: newCode, generatedBy: admin.username });
-    await adminCode.save();
-    
-    res.json({ code: newCode, expiresIn: 300 });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Create new admin with code
-app.post('/api/admin/create-with-code', async (req, res) => {
-  try {
-    const { code, username, password, email, fullName } = req.body;
-    
-    const validCode = await AdminCode.findOne({ code });
-    if (!validCode) return res.status(401).json({ message: 'Invalid or expired code' });
-    
-    const existing = await Admin.findOne({ $or: [{ username }, { email }] });
-    if (existing) return res.status(400).json({ message: 'Username or email already exists' });
-    
-    const hashed = await bcrypt.hash(password, 10);
-    const admin = new Admin({ username, password: hashed, email, fullName, role: 'admin', createdBy: validCode.generatedBy });
-    await admin.save();
-    
-    await AdminCode.deleteOne({ code });
-    res.json({ message: 'Admin created successfully' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Get all admins (superadmin only)
-app.get('/api/admin/all', async (req, res) => {
-  const admins = await Admin.find({}, '-password');
-  res.json(admins);
-});
-
-// Delete admin (superadmin only)
-app.delete('/api/admin/:id', async (req, res) => {
-  const { adminId, targetId } = req.body;
-  const currentAdmin = await Admin.findById(adminId);
-  if (!currentAdmin || currentAdmin.role !== 'superadmin') {
-    return res.status(403).json({ message: 'Only superadmin can delete admins' });
-  }
-  
-  const targetAdmin = await Admin.findById(targetId);
-  if (!targetAdmin) return res.status(404).json({ message: 'Admin not found' });
-  if (targetAdmin.role === 'superadmin') return res.status(403).json({ message: 'Cannot delete superadmin' });
-  
-  await Admin.findByIdAndDelete(targetId);
-  res.json({ message: 'Admin deleted successfully' });
-});
-
-// ========== PRODUCT ROUTES ==========
-
-app.get('/api/products', async (req, res) => {
-  const products = await Product.find().sort({ createdAt: -1 });
-  res.json(products);
-});
-
-app.post('/api/products', async (req, res) => {
-  const product = new Product(req.body);
-  await product.save();
-  res.status(201).json(product);
-});
-
-app.put('/api/products/:id', async (req, res) => {
-  const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(product);
-});
-
-app.delete('/api/products/:id', async (req, res) => {
-  await Product.findByIdAndDelete(req.params.id);
-  res.json({ message: 'Product deleted' });
-});
-
-// ========== ORDER ROUTES ==========
-
 app.post('/api/place-order', async (req, res) => {
   try {
     const { customer, orderItems, total, paymentMethod } = req.body;
     const { orderId, orderNumber } = await generateOrderId(customer.zipCode);
     const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
     const order = new Order({
       orderId, orderNumber, zipCode: customer.zipCode,
       customer: {
@@ -317,7 +232,6 @@ app.post('/api/place-order', async (req, res) => {
       orderSummary: { subtotal, total },
       paymentMethod
     });
-    
     await order.save();
     res.json({ success: true, orderId });
   } catch (err) {
@@ -326,17 +240,25 @@ app.post('/api/place-order', async (req, res) => {
 });
 
 app.get('/api/orders', async (req, res) => {
-  const orders = await Order.find().sort({ orderDate: -1 });
-  res.json(orders);
+  try {
+    const orders = await Order.find().sort({ orderDate: -1 });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 
 // ========== START SERVER ==========
-const PORT = 5000;
+const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, async () => {
   await initProducts();
   const adminCount = await Admin.countDocuments();
-  console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`✅ MongoDB Atlas: ${mongoose.connection.name || 'connected'}`);
   console.log(`👥 Admins: ${adminCount}`);
-  if (adminCount === 0) console.log(`\n🔐 First time setup: http://localhost:3000/admin/setup`);
-  console.log(`📝 Admin signup: http://localhost:3000/admin/signup`);
 });
