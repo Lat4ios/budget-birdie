@@ -1,0 +1,38 @@
+[
+  {
+    "_id": "1",
+    "name": "Premium Golf Balls (12 Pack)",
+    "description": "Tour-quality golf balls with exceptional distance and spin control.",
+    "price": 2299,
+    "imageUrl": "https://images.unsplash.com/photo-1587174486073-ae5e5cff23aa?w=400",
+    "category": "balls",
+    "inStock": true,
+    "stockQuantity": 50,
+    "featured": false,
+    "discount": 0
+  },
+  {
+    "_id": "2",
+    "name": "Performance Golf Polo",
+    "description": "Moisture-wicking, UV-protection fabric keeps you comfortable all day.",
+    "price": 3499,
+    "imageUrl": "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=400",
+    "category": "apparel",
+    "inStock": true,
+    "stockQuantity": 30,
+    "featured": false,
+    "discount": 0
+  },
+  {
+    "_id": "3",
+    "name": "Pro Golf Glove",
+    "description": "Premium cabretta leather glove for superior feel and grip.",
+    "price": 1499,
+    "imageUrl": "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?w=400",
+    "category": "accessories",
+    "inStock": true,
+    "stockQuantity": 100,
+    "featured": false,
+    "discount": 0
+  }
+]

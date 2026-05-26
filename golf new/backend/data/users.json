@@ -1,0 +1,11 @@
+[
+  {
+    "_id": "1779317769193",
+    "username": "john",
+    "password": "$2b$10$1Tl5JTn/6RGtib.iVHaHGeZrSH0vniBwUSFWlmQmpUF5eyoK0Ceiu",
+    "email": "jcllamas1234@gmail.com",
+    "fullName": "John Christian Llamas",
+    "role": "superadmin",
+    "createdAt": "2026-05-20T22:56:09.193Z"
+  }
+]
