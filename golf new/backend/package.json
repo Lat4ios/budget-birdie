@@ -1,6 +1,7 @@
 {
   "name": "golf-store-backend",
   "version": "1.0.0",
+  "description": "Golf Store Backend API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
